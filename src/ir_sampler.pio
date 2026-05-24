@@ -1,0 +1,67 @@
+/*
+ * Copyright (c) 2026 Filip Kosecek
+ *
+ * Licensed under the MIT license.
+ * See the LICENSE file in the project root for full license information.
+ */
+
+/**
+ * @file ir_sampler.pio
+ *
+ * PIO program which samples the IR pin and sends the duration
+ * of the time between signal edges to the CPU.
+ *
+ * The IR pin is sampled once in every 6 clock cycles. The clock frequency
+ * is configurable via the clock divider for each protocol. The maximum duration
+ * of a pulse/pause is also configurable (see struct decoder definition).
+ *
+ * Pulses/pauses are represented as 32-bit integers. The 31 most significant
+ * bits represent the maximum allowed duration - actual duration
+ * (in clock cycles). The least significant bit denotes the polarity.
+ *
+ * @note RX FIFO autopush must be disabled in the main program.
+ */
+
+.program ir_sampler
+
+// Load the maximum pulse/pause duration from the CPU.
+load_constants:
+        pull block
+        mov y, osr
+
+.wrap_target
+init:
+        jmp pin high
+
+low:
+        mov x, y
+count_low:
+        jmp x-- check_for_rising_edge [2]
+low_limit_reached:
+        jmp init
+check_for_rising_edge:
+        nop
+        jmp pin send_duration_low
+        jmp count_low
+send_duration_low:
+        in x, 31
+        set x, 0
+        jmp send_to_cpu
+
+high:
+        mov x, y
+count_high:
+        jmp x-- check_for_falling_edge [2]
+high_limit_reached:
+        jmp init
+check_for_falling_edge:
+        nop
+        jmp pin count_high [1]
+send_duration_high:
+        in x, 31
+        set x, 1
+
+send_to_cpu:
+        in x, 1
+        push noblock
+.wrap
